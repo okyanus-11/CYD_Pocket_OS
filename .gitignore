@@ -1,0 +1,7 @@
+*.local.h
+*.secret.h
+.pio/
+build/
+secrets*
+__pycache__/
+
