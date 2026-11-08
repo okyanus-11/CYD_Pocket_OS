@@ -5,10 +5,12 @@
     TFT_eSPI display, XPT2046 touch CS=33 IRQ=36 SCK=25 MISO=39 MOSI=32
     CYD SD card CS=5, default SPI pins (verify your board/wiring).
   IMPORTANT:
-    1) Fill WIFI_PROFILES and GROQ_API_KEY below.
+    1) Copy config.example.h to config.h and fill in Wi-Fi + Groq values.
     2) The Wi-Fi switcher connects to networks listed in WIFI_PROFILES.
     3) Put an ASCII animation file at /badapple.txt on the SD card.
-       It uses 30 lines per frame, each frame separated by a line containing ---FRAME---.
+       The parser in this sketch expects 26 lines per frame, each frame
+       separated by a line containing ---FRAME--- (verified against the
+       recovered 2180-frame asset; the old 30-line note was wrong).
     4) Keep the Flask server on your computer running on the same home Wi-Fi.
 */
 
@@ -23,19 +25,29 @@
 #include <time.h>
 
 // ---------------- USER CONFIG ----------------
+// Credentials and the PC address are local-only (config.h, git-ignored).
+#if __has_include("config.h")
+#include "config.h"
+#else
+#include "config.example.h"
+#endif
+
 struct WiFiProfile { const char* ssid; const char* password; };
-WiFiProfile WIFI_PROFILES[] = {
-  {"YOUR_WIFI_NAME", "YOUR_WIFI_PASSWORD"},
-  // {"Another network", "its password"},
+static const WiFiProfile WIFI_PROFILES[] = {
+  {WIFI_PROFILE_1_SSID, WIFI_PROFILE_1_PASSWORD},
+  {WIFI_PROFILE_2_SSID, WIFI_PROFILE_2_PASSWORD},
+  {WIFI_PROFILE_3_SSID, WIFI_PROFILE_3_PASSWORD},
 };
-const int WIFI_PROFILE_COUNT = sizeof(WIFI_PROFILES) / sizeof(WIFI_PROFILES[0]);
+static const int WIFI_PROFILE_COUNT =
+  sizeof(WIFI_PROFILES) / sizeof(WIFI_PROFILES[0]);
 
-const char* GROQ_API_KEY = "PASTE_GROQ_API_KEY_HERE";
-const char* GROQ_MODEL = "openai/gpt-oss-20b";
-const char* GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+static const char* const GROQ_MODEL_NAME = GROQ_MODEL;
+static const char* const GROQ_URL =
+  "https://api.groq.com/openai/v1/chat/completions";
 
-// Set this to the computer's LAN IPv4 address. Spotify server previously used port 5000.
-const char* PC_SERVER = "http://YOUR_COMPUTER_LAN_IP:5000";
+static String pcServerBase() {
+  return String("http://") + PC_SERVER_HOST + ":" + String(PC_SERVER_PORT);
+}
 
 // ---------------- HARDWARE ----------------
 TFT_eSPI tft;
@@ -45,8 +57,15 @@ TFT_eSPI tft;
 #define TOUCH_MISO 39
 #define TOUCH_MOSI 32
 #define SD_CS 5
+#define SD_SCK 18
+#define SD_MISO 19
+#define SD_MOSI 23
+#define BOOT_BUTTON 0
 
+// TFT_eSPI is built with USE_HSPI_PORT=1. The touch panel owns VSPI, and the
+// SD slot borrows VSPI only while the ASCII player is open (see openBadApple).
 SPIClass touchSPI(VSPI);
+SPIClass sdSPI(VSPI);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
 const int SW = 320, SH = 240;
@@ -60,6 +79,8 @@ String inputText = "";
 String lastReply = "";
 bool keyboardShift = false;
 bool sdReady = false;
+bool badApplePlaying = false;
+File frameFile;
 
 // ---------------- TOUCH ----------------
 bool getTouchPoint(int &x, int &y) {
@@ -108,7 +129,18 @@ void drawHome() {
   tft.setCursor(7, 180); tft.print(statusText.substring(0, 50));
   tft.setCursor(7, 218); tft.print("Tap an app to open");
 }
-void goHome() { screen = HOME; drawHome(); }
+void goHome() {
+  badApplePlaying = false;
+  if (frameFile) frameFile.close();
+  if (sdReady) {
+    SD.end();
+    sdReady = false;
+    // Re-route VSPI back to the touch panel.
+    touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
+  }
+  screen = HOME;
+  drawHome();
+}
 
 // ---------------- BOOT ANIMATION ----------------
 void bootAnimation() {
@@ -197,6 +229,7 @@ void connectProfile(int index) {
   if (index < 0 || index >= foundNetworks) return;
   String selected = foundSSID[index];
   for (int i = 0; i < WIFI_PROFILE_COUNT; i++) {
+    if (strlen(WIFI_PROFILES[i].ssid) == 0) continue;
     if (selected == WIFI_PROFILES[i].ssid) {
       header("CONNECTING");
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -258,7 +291,7 @@ void drawTextApp(bool pcMode) {
 void addTypedChar(char c) { if (inputText.length() < 140) inputText += c; }
 
 String askGroq(String prompt) {
-  if (String(GROQ_API_KEY) == "PASTE_GROQ_API_KEY_HERE") return "Set GROQ_API_KEY in the sketch first.";
+  if (String(GROQ_API_KEY) == "YOUR_GROQ_API_KEY") return "Set GROQ_API_KEY in config.h first.";
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   if (!http.begin(client, GROQ_URL)) return "Could not start HTTPS";
@@ -266,8 +299,10 @@ String askGroq(String prompt) {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", String("Bearer ") + GROQ_API_KEY);
   JsonDocument req;
-  req["model"] = GROQ_MODEL;
-  req["max_completion_tokens"] = 220;
+  req["model"] = GROQ_MODEL_NAME;
+  // Keep reasoning short so the small token budget is spent on visible text.
+  req["reasoning_effort"] = "low";
+  req["max_completion_tokens"] = 320;
   JsonArray msgs = req["messages"].to<JsonArray>();
   JsonObject sys = msgs.add<JsonObject>();
   sys["role"] = "system";
@@ -284,7 +319,7 @@ String askGroq(String prompt) {
 void postPCMessage(String msg) {
   if (WiFi.status() != WL_CONNECTED) { statusText = "Wi-Fi is offline"; return; }
   HTTPClient http;
-  String url = String(PC_SERVER) + "/message";
+  String url = pcServerBase() + "/message";
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   JsonDocument doc; doc["message"] = msg; doc["source"] = "CYD";
@@ -358,16 +393,24 @@ void tickSnake() {
 }
 
 // ---------------- ASCII ANIMATION PLAYER ----------------
-File frameFile;
 unsigned long lastFrame = 0;
-const int FRAME_LINES = 26;
+const int FRAME_LINES = 26;   // verified against the recovered asset
 void openBadApple() {
+  badApplePlaying = false;
   header("ASCII PLAYER");
+
+  // The SD slot and touch panel share VSPI on the CYD. Start the card only
+  // while this app is open; touch is restored by goHome().
+  touchSPI.end();
+  sdSPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  sdReady = SD.begin(SD_CS, sdSPI, 1000000);
+
   if (!sdReady) {
     tft.setTextColor(TFT_YELLOW, TFT_BLACK);
     tft.setCursor(8, 45); tft.print("SD card not detected.");
     tft.setCursor(8, 62); tft.print("Insert SD with /badapple.txt");
     tft.setCursor(8, 79); tft.print("ASCII frames are user-supplied.");
+    touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   } else {
     if (frameFile) frameFile.close();
     frameFile = SD.open("/badapple.txt", FILE_READ);
@@ -375,13 +418,26 @@ void openBadApple() {
       tft.setTextColor(TFT_YELLOW, TFT_BLACK);
       tft.setCursor(8, 45); tft.print("Missing /badapple.txt");
       tft.setCursor(8, 62); tft.print("Put ASCII frames on SD.");
+      SD.end();
+      sdReady = false;
+      touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
     } else {
+      badApplePlaying = true;
       tft.setTextColor(TFT_GREEN, TFT_BLACK);
       tft.setCursor(8, 45); tft.print("ASCII animation loaded.");
       tft.setCursor(8, 62); tft.print("Playing frames...");
+      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+      tft.setCursor(8, 190); tft.print("Hold BOOT to return");
     }
   }
-  button(5, 210, 75, 25, "BACK", TFT_DARKGREY);
+
+  if (sdReady) {
+    tft.fillRoundRect(5, 210, 120, 25, 4, TFT_DARKGREY);
+    tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    tft.setCursor(12, 219); tft.print("BOOT = EXIT");
+  } else {
+    button(5, 210, 75, 25, "BACK", TFT_DARKGREY);
+  }
 }
 void playAsciiFrame() {
   if (screen != BADAPPLE_APP || !frameFile || millis() - lastFrame < 100) return;
@@ -410,25 +466,49 @@ void setup() {
   tft.init(); tft.setRotation(1);
   touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(touchSPI); touch.setRotation(1);
-  randomSeed(analogRead(34));
+  randomSeed(esp_random());
   bootAnimation();
 
+  pinMode(BOOT_BUTTON, INPUT_PULLUP);
+
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_PROFILES[0].ssid, WIFI_PROFILES[0].password);
-  unsigned long started = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - started < 12000) delay(250);
+  WiFi.setAutoReconnect(true);
+
+  bool haveProfile = strlen(WIFI_PROFILES[0].ssid) > 0 &&
+                     String(WIFI_PROFILES[0].ssid) != "YOUR_WIFI_SSID";
+
+  if (haveProfile) {
+    WiFi.begin(WIFI_PROFILES[0].ssid, WIFI_PROFILES[0].password);
+    unsigned long started = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - started < 12000) delay(250);
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com");
     statusText = "Wi-Fi connected: " + WiFi.localIP().toString();
-  } else statusText = "Wi-Fi offline; open Wi-Fi app";
-  // SD support is optional. If your SD and TFT share SPI pins, test SD separately.
-  sdReady = SD.begin(SD_CS);
+  } else if (haveProfile) {
+    statusText = "Wi-Fi offline; open Wi-Fi app";
+  } else {
+    statusText = "Set Wi-Fi in config.h";
+  }
+
+  // SD is started lazily by the ASCII player so it cannot steal VSPI from
+  // the touch panel during normal app use.
   drawHome();
 }
 void loop() {
+  if (screen == BADAPPLE_APP && badApplePlaying) {
+    playAsciiFrame();
+    if (digitalRead(BOOT_BUTTON) == LOW) {
+      goHome();
+      delay(300);
+    }
+    delay(5);
+    return;
+  }
+
   updateClock();
   tickSnake();
-  playAsciiFrame();
   int x, y;
   if (!getTouchPoint(x, y)) { delay(10); return; }
 
@@ -446,7 +526,7 @@ void loop() {
     if (y > 195 && x < 95) goHome();
   } else if (screen == WIFI_APP) {
     if (y > 198 && x < 95) scanNetworks();
-    else if (y > 198 && x < 190) goHome();
+    else if (y > 198 && x >= 95 && x < 190) goHome();
     else if (y >= 42 && y < 192) connectProfile((y - 42) / 25);
   } else if (screen == SNAKE_APP) {
     if (y > 205 && x < 80) { snakeAlive = false; goHome(); }
@@ -456,7 +536,10 @@ void loop() {
     else if (x > 160) { if (dx != -1) { dx = 1; dy = 0; } }
     else { if (dy != -1) { dx = 0; dy = 1; } }
   } else if (screen == BADAPPLE_APP) {
-    if (y > 205 && x < 90) { if (frameFile) frameFile.close(); goHome(); }
+    // While frames are playing, touch is unavailable because the SD card owns
+    // VSPI; loop() exits on the BOOT button. If the card or file was missing,
+    // touch has already been restored, so the drawn BACK button must work.
+    if (!badApplePlaying && y > 205 && x < 90) goHome();
   } else if (screen == AI_CHAT || screen == PC_MESSAGE) {
     bool pc = screen == PC_MESSAGE;
     if (y > 205 && x < 90) { goHome(); }
@@ -477,4 +560,3 @@ void loop() {
   }
   waitForRelease();
 }
-
