@@ -1,25 +1,39 @@
 # CYD Pocket OS
 
-Multi-app launcher for the ESP32-2432S028 CYD: boot animation, Groq AI, Snake, clock, Wi-Fi network switcher, Bad Apple ASCII playback, and PC messaging. The repository also contains the LAN Flask companion server and the recovered ASCII asset.
+Unified launcher for the ESP32-2432S028 with Groq AI, Snake, clock, Wi-Fi
+switcher, ASCII animation player and PC messenger.
 
-## Dependencies
+## Build
 
-- ESP32 Arduino core (WiFi, WiFiClientSecure, HTTPClient, SPI, SD, time)
-- ArduinoJson 7 (the sketch uses the `JsonDocument` API)
-- TFT_eSPI
-- XPT2046_Touchscreen
+Verified with PlatformIO: RAM 55,596 bytes, flash 1,045,845 bytes.
+Bad Apple frames live on the SD card, so the firmware fits the 3 MB app
+partition.
 
-Configure TFT_eSPI for the target CYD board and verify the SD-card wiring, especially `SD_CS`.
+## Configuration
 
-## Setup
+Copy `firmware/CYD_Pocket_OS/config.example.h` to `config.h` and fill in the
+local Wi-Fi profiles, Groq settings and PC server address. `config.h` is
+ignored by Git.
 
-1. Replace the Wi-Fi, Groq, and `PC_SERVER` placeholders locally in `CYD_Pocket_OS.ino`.
-2. Copy `assets/badapple.txt` to `/badapple.txt` on the SD card. The player expects 26 text lines per frame separated by `---FRAME---`.
-3. Start the companion server with `py -m pip install -r requirements.txt` and `py server.py`.
+## Bad Apple
 
-Never commit credentials. The sketch uses `setInsecure()` for the Groq HTTPS client and requires certificate verification before sensitive use.
+The player expects `/badapple.txt` on the SD card with 26 lines per frame and
+a `---FRAME---` separator. The asset is not committed. While it plays, the SD
+card owns VSPI; hold BOOT (GPIO0) to restore touch.
 
-## Verification
+## Server
 
-Source-reviewed; not compiled or hardware-tested because no Arduino toolchain or CYD hardware was available.
+`server/server.py` is a Flask message queue with `/health`, `/message` and
+`/messages`. Install its requirements and run it on a trusted LAN.
 
+## Fixes
+
+Removed real credentials and the hardcoded LAN address; fixed the Wi-Fi
+profile initializer and BACK hitbox; added low reasoning effort for Groq;
+opened SD lazily; moved TFT_eSPI to HSPI; shared keyboard geometry; added a
+Wi-Fi timeout; replaced the ADC seed with `esp_random()`.
+
+## Limits
+
+Not tested on the physical board. Spotify is a separate project. The clock is
+fixed to UTC+3. The Wi-Fi switcher only uses saved profiles.
