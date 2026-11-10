@@ -15,6 +15,11 @@ Copy `firmware/CYD_Pocket_OS/config.example.h` to `config.h` and fill in the
 local Wi-Fi profiles, Groq settings and PC server address. `config.h` is
 ignored by Git.
 
+Groq HTTPS validates the server against the GTS Root R4 certificate in
+`firmware/CYD_Pocket_OS/groq_ca.h`. The Groq request waits briefly for a valid
+SNTP clock and fails closed if time cannot be synchronized. If Groq changes
+its certificate authority, update the pinned CA certificate and rebuild.
+
 ## Bad Apple
 
 The player expects `/badapple.txt` on the SD card with 26 lines per frame and

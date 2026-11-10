@@ -23,6 +23,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <time.h>
+#include "groq_ca.h"
 
 // ---------------- USER CONFIG ----------------
 // Credentials and the PC address are local-only (config.h, git-ignored).
@@ -292,7 +293,20 @@ void addTypedChar(char c) { if (inputText.length() < 140) inputText += c; }
 
 String askGroq(String prompt) {
   if (String(GROQ_API_KEY) == "YOUR_GROQ_API_KEY") return "Set GROQ_API_KEY in config.h first.";
-  WiFiClientSecure client; client.setInsecure();
+  if (WiFi.status() != WL_CONNECTED) return "Wi-Fi is offline";
+  const time_t minimumValidTime = 1700000000;
+  if (time(nullptr) < minimumValidTime) {
+    configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com");
+    unsigned long syncStarted = millis();
+    while (time(nullptr) < minimumValidTime &&
+           millis() - syncStarted < 10000) {
+      if (WiFi.status() != WL_CONNECTED) return "Wi-Fi disconnected during time sync";
+      delay(250);
+    }
+    if (time(nullptr) < minimumValidTime) return "Clock not synced; Groq request cancelled";
+  }
+  WiFiClientSecure client;
+  client.setCACert(GROQ_ROOT_CA);
   HTTPClient http;
   if (!http.begin(client, GROQ_URL)) return "Could not start HTTPS";
   http.setTimeout(30000);
