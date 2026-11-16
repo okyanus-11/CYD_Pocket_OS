@@ -56,5 +56,16 @@ class AccessControlTests(unittest.TestCase):
         self.assertEqual(cleared.get_json()["cleared"], 1)
 
 
+    def test_oversized_request_body_is_rejected(self):
+        with patch.dict(os.environ, {"CYD_API_TOKEN": "test-secret"}):
+            response = self.client.post(
+                "/message",
+                data="x" * 5000,
+                content_type="application/json",
+                headers={"Authorization": "Bearer test-secret"},
+            )
+        self.assertEqual(response.status_code, 413)
+
+
 if __name__ == "__main__":
     unittest.main()
