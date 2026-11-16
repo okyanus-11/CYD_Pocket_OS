@@ -35,7 +35,16 @@ from datetime import datetime
 
 from flask import Flask, jsonify, request
 
-MAX_MESSAGES = int(os.getenv("CYD_MAX_MESSAGES", "100"))
+def _message_capacity(value: str | None) -> int:
+    """Keep the in-memory queue within a safe, predictable range."""
+    try:
+        parsed = int(value) if value is not None else 100
+    except (TypeError, ValueError):
+        return 100
+    return max(1, min(parsed, 1000))
+
+
+MAX_MESSAGES = _message_capacity(os.getenv("CYD_MAX_MESSAGES"))
 MAX_MESSAGE_LENGTH = 240
 
 app = Flask(__name__)
