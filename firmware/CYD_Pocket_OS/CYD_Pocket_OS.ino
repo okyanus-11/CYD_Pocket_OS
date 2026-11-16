@@ -45,6 +45,13 @@ static const char* const GROQ_MODEL_NAME = GROQ_MODEL;
 static const char* const GROQ_URL =
   "https://api.groq.com/openai/v1/chat/completions";
 
+#ifndef GROQ_ROOT_CA
+#define GROQ_ROOT_CA ""
+#endif
+#ifndef PC_SERVER_TOKEN
+#define PC_SERVER_TOKEN ""
+#endif
+
 static String pcServerBase() {
   return String("http://") + PC_SERVER_HOST + ":" + String(PC_SERVER_PORT);
 }
@@ -292,7 +299,10 @@ void addTypedChar(char c) { if (inputText.length() < 140) inputText += c; }
 
 String askGroq(String prompt) {
   if (String(GROQ_API_KEY) == "YOUR_GROQ_API_KEY") return "Set GROQ_API_KEY in config.h first.";
-  WiFiClientSecure client; client.setInsecure();
+  if (strlen(GROQ_ROOT_CA) < 100) return "Set GROQ_ROOT_CA in config.h";
+  if (time(nullptr) < 1700000000) return "Clock not synchronized; HTTPS unavailable";
+  WiFiClientSecure client;
+  client.setCACert(GROQ_ROOT_CA);
   HTTPClient http;
   if (!http.begin(client, GROQ_URL)) return "Could not start HTTPS";
   http.setTimeout(30000);
@@ -318,9 +328,14 @@ String askGroq(String prompt) {
 }
 void postPCMessage(String msg) {
   if (WiFi.status() != WL_CONNECTED) { statusText = "Wi-Fi is offline"; return; }
+  if (strlen(PC_SERVER_TOKEN) < 16) {
+    statusText = "Set PC_SERVER_TOKEN in config.h";
+    return;
+  }
   HTTPClient http;
   String url = pcServerBase() + "/message";
   http.begin(url);
+  http.addHeader("Authorization", String("Bearer ") + PC_SERVER_TOKEN);
   http.addHeader("Content-Type", "application/json");
   JsonDocument doc; doc["message"] = msg; doc["source"] = "CYD";
   String body; serializeJson(doc, body);
@@ -485,6 +500,10 @@ void setup() {
 
   if (WiFi.status() == WL_CONNECTED) {
     configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com");
+    unsigned long syncStarted = millis();
+    while (time(nullptr) < 1700000000 && millis() - syncStarted < 12000) {
+      delay(250);
+    }
     statusText = "Wi-Fi connected: " + WiFi.localIP().toString();
   } else if (haveProfile) {
     statusText = "Wi-Fi offline; open Wi-Fi app";
