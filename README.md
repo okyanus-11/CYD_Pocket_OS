@@ -11,7 +11,7 @@ The same semantic colours are used across the launcher and apps.
 
 ## Build
 
-Verified with PlatformIO: RAM 55,596 bytes, flash 1,045,845 bytes.
+Verified with PlatformIO: RAM 55,448 bytes (16.9%), flash 1,026,637 bytes (32.6% of the 3 MB app partition).
 Bad Apple frames live on the SD card, so the firmware fits the 3 MB app
 partition.
 
