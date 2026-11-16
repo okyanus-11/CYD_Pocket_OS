@@ -44,4 +44,4 @@ fixed to UTC+3. The Wi-Fi switcher only uses saved profiles.
 
 ## Installation
 
-For prerequisites, environment setup, configuration, and run/build commands, see the [installation guide](INSTALLATION.md).
+Requires an ESP32-2432S028 CYD, PlatformIO, Wi-Fi and a Groq API key. Configure `firmware/CYD_Pocket_OS/config.h` from the example, including Wi-Fi profiles, Groq trust root and the PC server token/address; build and upload from `firmware/`. The optional PC messenger uses `server/requirements.txt` and `server/server.py`. See the [full installation and flashing guide](INSTALLATION.md).
