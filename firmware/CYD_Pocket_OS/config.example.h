@@ -22,5 +22,5 @@
 
 // Windows PC running SHARED/LAN_SERVER/server.py (or server/server.py).
 // Use the PC's current LAN IPv4 address; do not reuse an old address.
-#define PC_SERVER_HOST  "192.168.1.100"
+#define PC_SERVER_HOST  "YOUR_PC_LAN_IP"
 #define PC_SERVER_PORT  5000
