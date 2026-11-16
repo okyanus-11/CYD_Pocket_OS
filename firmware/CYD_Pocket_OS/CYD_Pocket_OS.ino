@@ -328,8 +328,9 @@ String askGroq(String prompt) {
 }
 void postPCMessage(String msg) {
   if (WiFi.status() != WL_CONNECTED) { statusText = "Wi-Fi is offline"; return; }
-  if (strlen(PC_SERVER_TOKEN) < 16) {
-    statusText = "Set PC_SERVER_TOKEN in config.h";
+  if (String(PC_SERVER_TOKEN) == "CHANGE_ME_WITH_A_LONG_RANDOM_TOKEN" ||
+      strlen(PC_SERVER_TOKEN) < 24) {
+    statusText = "Set a private PC_SERVER_TOKEN in config.h";
     return;
   }
   HTTPClient http;
