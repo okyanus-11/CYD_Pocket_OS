@@ -41,3 +41,7 @@ Bearer token; tokenless mode is loopback-only.
 
 Not tested on the physical board. Spotify is a separate project. The clock is
 fixed to UTC+3. The Wi-Fi switcher only uses saved profiles.
+
+## Installation
+
+For prerequisites, environment setup, configuration, and run/build commands, see the [installation guide](INSTALLATION.md).
