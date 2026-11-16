@@ -4,7 +4,18 @@ import os
 import unittest
 from unittest.mock import patch
 
-from server import app, _messages
+from server import app, _message_capacity, _messages
+
+
+class CapacityConfigurationTests(unittest.TestCase):
+    def test_invalid_capacity_uses_safe_default(self):
+        self.assertEqual(_message_capacity("not-a-number"), 100)
+        self.assertEqual(_message_capacity(None), 100)
+
+    def test_capacity_is_clamped(self):
+        self.assertEqual(_message_capacity("-5"), 1)
+        self.assertEqual(_message_capacity("50000"), 1000)
+        self.assertEqual(_message_capacity("250"), 250)
 
 
 class AccessControlTests(unittest.TestCase):
