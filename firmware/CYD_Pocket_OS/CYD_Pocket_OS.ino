@@ -165,7 +165,7 @@ void header(const char* title) {
   tft.fillScreen(UI_BG);
   tft.fillRect(0, 0, SW, 22, UI_ACCENT);
   tft.setTextSize(1);
-  tft.setTextColor(UI_TEXT, UI_ACCENT);
+  tft.setTextColor(readableTextOn(UI_ACCENT), UI_ACCENT);
   tft.setCursor(5, 7); tft.print(title);
   tft.setCursor(264, 7); tft.print(WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
 }
