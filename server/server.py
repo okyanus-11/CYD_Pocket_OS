@@ -39,6 +39,7 @@ MAX_MESSAGES = int(os.getenv("CYD_MAX_MESSAGES", "100"))
 MAX_MESSAGE_LENGTH = 240
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 4096  # Tiny JSON messages only.
 _messages: deque[dict] = deque(maxlen=MAX_MESSAGES)
 _lock = threading.Lock()
 
