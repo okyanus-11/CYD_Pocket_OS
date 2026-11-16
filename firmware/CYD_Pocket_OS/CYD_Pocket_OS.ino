@@ -23,6 +23,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <time.h>
+#include <Preferences.h>
 
 // ---------------- USER CONFIG ----------------
 // Credentials and the PC address are local-only (config.h, git-ignored).
@@ -76,6 +77,46 @@ SPIClass sdSPI(VSPI);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
 const int SW = 320, SH = 240;
+
+#define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
+
+struct UiPalette {
+  uint16_t background, panel, border, text, muted;
+  uint16_t accent, success, warning, danger, buttonAlt;
+};
+
+static const UiPalette UI_PALETTES[] = {
+  // Graphite: cool slate surfaces with a restrained blue accent.
+  {RGB565(16,21,29), RGB565(23,31,42), RGB565(44,57,72), RGB565(237,243,248), RGB565(154,171,186),
+   RGB565(120,170,255), RGB565(88,201,154), RGB565(232,189,120), RGB565(232,121,121), RGB565(181,156,255)},
+  // Midnight: deep indigo surfaces with lavender highlights.
+  {RGB565(17,17,27), RGB565(26,26,42), RGB565(56,56,79), RGB565(236,236,247), RGB565(162,162,191),
+   RGB565(181,156,255), RGB565(120,214,176), RGB565(230,197,139), RGB565(232,121,121), RGB565(120,170,255)},
+  // Light: soft neutral surfaces and high-contrast ink.
+  {RGB565(242,245,249), RGB565(255,255,255), RGB565(215,224,233), RGB565(32,43,58), RGB565(102,119,138),
+   RGB565(50,111,209), RGB565(22,132,92), RGB565(166,107,23), RGB565(185,67,67), RGB565(118,84,197)}
+};
+static uint8_t activeTheme = 0;
+static Preferences themePreferences;
+#define UI_BG (UI_PALETTES[activeTheme].background)
+#define UI_PANEL (UI_PALETTES[activeTheme].panel)
+#define UI_BORDER (UI_PALETTES[activeTheme].border)
+#define UI_TEXT (UI_PALETTES[activeTheme].text)
+#define UI_MUTED (UI_PALETTES[activeTheme].muted)
+#define UI_ACCENT (UI_PALETTES[activeTheme].accent)
+#define UI_SUCCESS (UI_PALETTES[activeTheme].success)
+#define UI_WARNING (UI_PALETTES[activeTheme].warning)
+#define UI_DANGER (UI_PALETTES[activeTheme].danger)
+#define UI_ALT (UI_PALETTES[activeTheme].buttonAlt)
+
+void cycleTheme() {
+  activeTheme = (activeTheme + 1) % (sizeof(UI_PALETTES) / sizeof(UI_PALETTES[0]));
+  themePreferences.begin("cyd-ui", false);
+  themePreferences.putUChar("theme", activeTheme);
+  themePreferences.end();
+  drawHome();
+}
+
 const int TOUCH_MIN_X = 200, TOUCH_MAX_X = 3900;
 const int TOUCH_MIN_Y = 200, TOUCH_MAX_Y = 3900;
 
@@ -105,36 +146,37 @@ void waitForRelease() {
 
 // ---------------- UI HELPERS ----------------
 void header(const char* title) {
-  tft.fillScreen(TFT_BLACK);
-  tft.fillRect(0, 0, SW, 22, TFT_DARKCYAN);
+  tft.fillScreen(UI_BG);
+  tft.fillRect(0, 0, SW, 22, UI_ACCENT);
   tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, TFT_DARKCYAN);
+  tft.setTextColor(UI_TEXT, UI_ACCENT);
   tft.setCursor(5, 7); tft.print(title);
   tft.setCursor(264, 7); tft.print(WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
 }
 void button(int x, int y, int w, int h, const char* label, uint16_t color) {
   tft.fillRoundRect(x, y, w, h, 5, color);
-  tft.drawRoundRect(x, y, w, h, 5, TFT_WHITE);
+  tft.drawRoundRect(x, y, w, h, 5, UI_BORDER);
   tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, color);
+  tft.setTextColor(UI_TEXT, color);
   int textW = strlen(label) * 6;
   tft.setCursor(x + max(3, (w - textW) / 2), y + (h - 8) / 2);
   tft.print(label);
 }
 void drawHome() {
   header("CYD POCKET OS");
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextColor(UI_MUTED, UI_BG);
   tft.setCursor(7, 27); tft.print("Choose an app");
-  button(7, 43, 98, 48, "GROQ AI", TFT_DARKGREEN);
-  button(111, 43, 98, 48, "SNAKE", TFT_BLUE);
-  button(215, 43, 98, 48, "CLOCK", TFT_PURPLE);
-  button(7, 99, 98, 48, "WI-FI", TFT_DARKCYAN);
-  button(111, 99, 98, 48, "BAD APPLE", TFT_MAROON);
-  button(215, 99, 98, 48, "PC MESSAGE", TFT_OLIVE);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  button(7, 43, 98, 48, "GROQ AI", UI_SUCCESS);
+  button(111, 43, 98, 48, "SNAKE", UI_ACCENT);
+  button(215, 43, 98, 48, "CLOCK", UI_ALT);
+  button(7, 99, 98, 48, "WI-FI", UI_ACCENT);
+  button(111, 99, 98, 48, "BAD APPLE", UI_DANGER);
+  button(215, 99, 98, 48, "PC MESSAGE", UI_WARNING);
+  tft.setTextColor(UI_MUTED, UI_BG);
   tft.setCursor(7, 165); tft.print("CYD ESP32 | 320x240");
-  tft.setCursor(7, 180); tft.print(statusText.substring(0, 50));
-  tft.setCursor(7, 218); tft.print("Tap an app to open");
+  tft.setCursor(7, 180); tft.print(statusText.substring(0, 48));
+  tft.setCursor(7, 218); tft.print("Tap THEME to change colours");
+  button(215, 202, 98, 28, "THEME", UI_ACCENT);
 }
 void goHome() {
   badApplePlaying = false;
@@ -151,20 +193,20 @@ void goHome() {
 
 // ---------------- BOOT ANIMATION ----------------
 void bootAnimation() {
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(UI_BG);
   tft.setTextSize(2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.setTextColor(UI_ACCENT, UI_BG);
   tft.setCursor(42, 60); tft.print("CYD POCKET");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(UI_TEXT, UI_BG);
   tft.setCursor(92, 84); tft.print("OS");
-  tft.drawRect(30, 125, 260, 14, TFT_DARKGREY);
+  tft.drawRect(30, 125, 260, 14, UI_BORDER);
   for (int i = 0; i <= 252; i += 7) {
-    tft.fillRect(34, 129, i, 6, TFT_GREEN);
-    tft.fillCircle(34 + i, 132, 2, TFT_WHITE);
+    tft.fillRect(34, 129, i, 6, UI_SUCCESS);
+    tft.fillCircle(34 + i, 132, 2, UI_TEXT);
     delay(18);
   }
   tft.setTextSize(1);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextColor(UI_MUTED, UI_BG);
   tft.setCursor(88, 154); tft.print("Starting applications...");
   delay(350);
 }
@@ -172,7 +214,7 @@ void bootAnimation() {
 // ---------------- CLOCK ----------------
 void drawClock() {
   header("CLOCK");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(UI_TEXT, UI_BG);
   tft.setTextSize(3);
   struct tm timeinfo;
   if (getLocalTime(&timeinfo, 50)) {
@@ -188,7 +230,7 @@ void drawClock() {
     tft.setTextSize(2); tft.setCursor(35, 75); tft.print("Waiting for NTP");
     tft.setTextSize(1); tft.setCursor(35, 105); tft.print("Connect Wi-Fi for time sync");
   }
-  button(8, 202, 72, 27, "BACK", TFT_DARKGREY);
+  button(8, 202, 72, 27, "BACK", UI_BORDER);
 }
 void updateClock() {
   if (screen != CLOCK_APP) return;
@@ -202,7 +244,7 @@ String foundSSID[12];
 int foundRSSI[12];
 void scanNetworks() {
   header("WI-FI NETWORKS");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(UI_TEXT, UI_BG);
   tft.setCursor(7, 30); tft.print("Scanning...");
   WiFi.mode(WIFI_STA);
   int n = WiFi.scanNetworks(false, true);
@@ -216,20 +258,20 @@ void scanNetworks() {
 }
 void drawWiFiList() {
   header("WI-FI SWITCHER");
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setTextColor(UI_MUTED, UI_BG);
   tft.setCursor(6, 25); tft.print("Tap a network to connect");
   for (int i = 0; i < foundNetworks && i < 6; i++) {
     int y = 42 + i * 25;
-    tft.fillRoundRect(5, y, 310, 22, 3, TFT_NAVY);
-    tft.setTextColor(TFT_WHITE, TFT_NAVY);
+    tft.fillRoundRect(5, y, 310, 22, 3, UI_PANEL);
+    tft.setTextColor(UI_TEXT, UI_PANEL);
     tft.setCursor(10, y + 7);
     String name = foundSSID[i]; if (name.length() > 25) name = name.substring(0, 25);
     tft.print(name);
     tft.setCursor(255, y + 7); tft.print(foundRSSI[i]); tft.print("dB");
   }
-  button(5, 202, 88, 27, "RESCAN", TFT_DARKCYAN);
-  button(100, 202, 88, 27, "BACK", TFT_DARKGREY);
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  button(5, 202, 88, 27, "RESCAN", UI_ACCENT);
+  button(100, 202, 88, 27, "BACK", UI_BORDER);
+  tft.setTextColor(UI_WARNING, UI_BG);
   tft.setCursor(194, 211); tft.print("Saved nets only");
 }
 void connectProfile(int index) {
@@ -239,7 +281,7 @@ void connectProfile(int index) {
     if (strlen(WIFI_PROFILES[i].ssid) == 0) continue;
     if (selected == WIFI_PROFILES[i].ssid) {
       header("CONNECTING");
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.setTextColor(UI_TEXT, UI_BG);
       tft.setCursor(10, 60); tft.print(selected);
       WiFi.disconnect();
       WiFi.begin(WIFI_PROFILES[i].ssid, WIFI_PROFILES[i].password);
@@ -253,16 +295,16 @@ void connectProfile(int index) {
       return;
     }
   }
-  tft.fillRect(5, 178, 310, 18, TFT_BLACK);
-  tft.setTextColor(TFT_RED, TFT_BLACK);
+  tft.fillRect(5, 178, 310, 18, UI_BG);
+  tft.setTextColor(UI_DANGER, UI_BG);
   tft.setCursor(8, 182); tft.print("Not saved: add password in WIFI_PROFILES");
 }
 
 // ---------------- TEXT ENTRY ----------------
 void drawTextApp(bool pcMode) {
   header(pcMode ? "PC MESSENGER" : "GROQ AI");
-  tft.drawRect(4, 27, 312, 69, TFT_DARKGREY);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawRect(4, 27, 312, 69, UI_BORDER);
+  tft.setTextColor(UI_TEXT, UI_BG);
   tft.setTextSize(1);
   String shown = inputText;
   if (shown.length() == 0) shown = lastReply;
@@ -279,20 +321,20 @@ void drawTextApp(bool pcMode) {
     int kw = SW / count;
     for (int c = 0; c < count; c++) {
       int x = c * kw;
-      tft.fillRoundRect(x + 1, y, kw - 2, 21, 3, TFT_NAVY);
-      tft.setTextColor(TFT_WHITE, TFT_NAVY);
+      tft.fillRoundRect(x + 1, y, kw - 2, 21, 3, UI_PANEL);
+      tft.setTextColor(UI_TEXT, UI_PANEL);
       tft.setCursor(x + (kw - 6) / 2, y + 7);
       char ch = rows[r][c]; if (keyboardShift) ch = toupper(ch);
       tft.print(ch);
     }
   }
-  button(3, 179, 48, 24, "SHIFT", TFT_MAROON);
-  button(54, 179, 65, 24, "SPACE", TFT_DARKGREY);
-  button(122, 179, 48, 24, "DEL", TFT_DARKGREY);
-  button(173, 179, 48, 24, "CLEAR", TFT_DARKGREY);
-  button(224, 179, 92, 24, pcMode ? "SEND TO PC" : "ASK GROQ", TFT_DARKGREEN);
-  button(5, 210, 75, 25, "BACK", TFT_DARKGREY);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  button(3, 179, 48, 24, "SHIFT", UI_DANGER);
+  button(54, 179, 65, 24, "SPACE", UI_BORDER);
+  button(122, 179, 48, 24, "DEL", UI_BORDER);
+  button(173, 179, 48, 24, "CLEAR", UI_BORDER);
+  button(224, 179, 92, 24, pcMode ? "SEND TO PC" : "ASK GROQ", UI_SUCCESS);
+  button(5, 210, 75, 25, "BACK", UI_BORDER);
+  tft.setTextColor(UI_MUTED, UI_BG);
   tft.setCursor(88, 219); tft.print(statusText.substring(0, 37));
 }
 void addTypedChar(char c) { if (inputText.length() < 140) inputText += c; }
@@ -374,15 +416,15 @@ void placeFood() {
 }
 void drawSnake() {
   header("SNAKE");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(UI_TEXT, UI_BG);
   tft.setCursor(220, 7); tft.print("SCORE "); tft.print(snakeScore);
-  tft.drawRect(7, 27, COLS * CELL, ROWS * CELL, TFT_DARKGREY);
+  tft.drawRect(7, 27, COLS * CELL, ROWS * CELL, UI_BORDER);
   for (int i = 0; i < snakeLen; i++)
-    tft.fillRect(8 + sx[i] * CELL, 28 + sy[i] * CELL, CELL - 1, CELL - 1, i == 0 ? TFT_GREEN : TFT_DARKGREEN);
-  tft.fillRect(8 + foodX * CELL, 28 + foodY * CELL, CELL - 1, CELL - 1, TFT_RED);
-  button(5, 210, 70, 25, "BACK", TFT_DARKGREY);
-  button(238, 210, 77, 25, snakeAlive ? "PAUSE" : "START", TFT_DARKCYAN);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.fillRect(8 + sx[i] * CELL, 28 + sy[i] * CELL, CELL - 1, CELL - 1, i == 0 ? UI_SUCCESS : UI_SUCCESS);
+  tft.fillRect(8 + foodX * CELL, 28 + foodY * CELL, CELL - 1, CELL - 1, UI_DANGER);
+  button(5, 210, 70, 25, "BACK", UI_BORDER);
+  button(238, 210, 77, 25, snakeAlive ? "PAUSE" : "START", UI_ACCENT);
+  tft.setTextColor(UI_MUTED, UI_BG);
   tft.setCursor(82, 219); tft.print("Tap left/right/top/bottom to steer");
 }
 void startSnake() {
@@ -422,7 +464,7 @@ void openBadApple() {
   sdReady = SD.begin(SD_CS, sdSPI, 1000000);
 
   if (!sdReady) {
-    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setTextColor(UI_WARNING, UI_BG);
     tft.setCursor(8, 45); tft.print("SD card not detected.");
     tft.setCursor(8, 62); tft.print("Insert SD with /badapple.txt");
     tft.setCursor(8, 79); tft.print("ASCII frames are user-supplied.");
@@ -431,7 +473,7 @@ void openBadApple() {
     if (frameFile) frameFile.close();
     frameFile = SD.open("/badapple.txt", FILE_READ);
     if (!frameFile) {
-      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+      tft.setTextColor(UI_WARNING, UI_BG);
       tft.setCursor(8, 45); tft.print("Missing /badapple.txt");
       tft.setCursor(8, 62); tft.print("Put ASCII frames on SD.");
       SD.end();
@@ -439,28 +481,28 @@ void openBadApple() {
       touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
     } else {
       badApplePlaying = true;
-      tft.setTextColor(TFT_GREEN, TFT_BLACK);
+      tft.setTextColor(UI_SUCCESS, UI_BG);
       tft.setCursor(8, 45); tft.print("ASCII animation loaded.");
       tft.setCursor(8, 62); tft.print("Playing frames...");
-      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+      tft.setTextColor(UI_WARNING, UI_BG);
       tft.setCursor(8, 190); tft.print("Hold BOOT to return");
     }
   }
 
   if (sdReady) {
-    tft.fillRoundRect(5, 210, 120, 25, 4, TFT_DARKGREY);
-    tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    tft.fillRoundRect(5, 210, 120, 25, 4, UI_BORDER);
+    tft.setTextColor(UI_TEXT, UI_BORDER);
     tft.setCursor(12, 219); tft.print("BOOT = EXIT");
   } else {
-    button(5, 210, 75, 25, "BACK", TFT_DARKGREY);
+    button(5, 210, 75, 25, "BACK", UI_BORDER);
   }
 }
 void playAsciiFrame() {
   if (screen != BADAPPLE_APP || !frameFile || millis() - lastFrame < 100) return;
   lastFrame = millis();
-  tft.fillRect(0, 23, SW, 184, TFT_BLACK);
+  tft.fillRect(0, 23, SW, 184, UI_BG);
   tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(UI_TEXT, UI_BG);
   int y = 25, lines = 0;
   while (frameFile.available() && lines < FRAME_LINES) {
     String line = frameFile.readStringUntil('\n'); line.replace("\r", "");
@@ -473,13 +515,17 @@ void playAsciiFrame() {
     y += 7; lines++;
   }
   if (!frameFile.available()) { frameFile.close(); frameFile = SD.open("/badapple.txt", FILE_READ); }
-  button(5, 210, 75, 25, "BACK", TFT_DARKGREY);
+  button(5, 210, 75, 25, "BACK", UI_BORDER);
 }
 
 // ---------------- SETUP / TOUCH ROUTER ----------------
 void setup() {
   Serial.begin(115200);
   tft.init(); tft.setRotation(1);
+  themePreferences.begin("cyd-ui", true);
+  activeTheme = themePreferences.getUChar("theme", 0);
+  themePreferences.end();
+  if (activeTheme >= sizeof(UI_PALETTES) / sizeof(UI_PALETTES[0])) activeTheme = 0;
   touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(touchSPI); touch.setRotation(1);
   randomSeed(esp_random());
@@ -533,7 +579,9 @@ void loop() {
   if (!getTouchPoint(x, y)) { delay(10); return; }
 
   if (screen == HOME) {
-    if (y >= 43 && y < 91) {
+    if (y >= 198 && x >= 210) {
+      cycleTheme();
+    } else if (y >= 43 && y < 91) {
       if (x < 108) { screen = AI_CHAT; inputText = ""; drawTextApp(false); }
       else if (x < 212) { screen = SNAKE_APP; startSnake(); }
       else { screen = CLOCK_APP; drawClock(); }
