@@ -111,6 +111,20 @@ static Preferences themePreferences;
 #define UI_DANGER (UI_PALETTES[activeTheme].danger)
 #define UI_ALT (UI_PALETTES[activeTheme].buttonAlt)
 
+
+// Pick foreground text with WCAG-style relative luminance so accent buttons
+// remain readable in Graphite, Midnight and Light palettes.
+static uint16_t readableTextOn(uint16_t background) {
+  float red = ((background >> 11) & 0x1F) / 31.0f;
+  float green = ((background >> 5) & 0x3F) / 63.0f;
+  float blue = (background & 0x1F) / 31.0f;
+  red = red <= 0.04045f ? red / 12.92f : powf((red + 0.055f) / 1.055f, 2.4f);
+  green = green <= 0.04045f ? green / 12.92f : powf((green + 0.055f) / 1.055f, 2.4f);
+  blue = blue <= 0.04045f ? blue / 12.92f : powf((blue + 0.055f) / 1.055f, 2.4f);
+  const float luminance = 0.2126f * red + 0.7152f * green + 0.0722f * blue;
+  return luminance > 0.179f ? RGB565(16, 21, 29) : RGB565(255, 255, 255);
+}
+
 void cycleTheme() {
   activeTheme = (activeTheme + 1) % (sizeof(UI_PALETTES) / sizeof(UI_PALETTES[0]));
   themePreferences.begin("cyd-ui", false);
@@ -159,7 +173,7 @@ void button(int x, int y, int w, int h, const char* label, uint16_t color) {
   tft.fillRoundRect(x, y, w, h, 5, color);
   tft.drawRoundRect(x, y, w, h, 5, UI_BORDER);
   tft.setTextSize(1);
-  tft.setTextColor(UI_TEXT, color);
+  tft.setTextColor(readableTextOn(color), color);
   int textW = strlen(label) * 6;
   tft.setCursor(x + max(3, (w - textW) / 2), y + (h - 8) / 2);
   tft.print(label);
