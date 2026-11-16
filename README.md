@@ -3,6 +3,12 @@
 Unified launcher for the ESP32-2432S028 with Groq AI, Snake, clock, Wi-Fi
 switcher, ASCII animation player and PC messenger.
 
+## Appearance
+
+Tap **THEME** on the home screen to cycle between Graphite, Midnight and Light.
+The selected palette is saved in ESP32 Preferences and restored after reboot.
+The same semantic colours are used across the launcher and apps.
+
 ## Build
 
 Verified with PlatformIO: RAM 55,596 bytes, flash 1,045,845 bytes.
@@ -14,7 +20,7 @@ partition.
 Copy `firmware/CYD_Pocket_OS/config.example.h` to `config.h` and fill in the
 local Wi-Fi profiles, Groq settings and PC server address. Set
 `GROQ_ROOT_CA` to the verified PEM root CA for `api.groq.com`; the firmware
-now rejects HTTPS connections if the CA or synchronized clock is missing.
+rejects HTTPS connections if the CA or synchronized clock is missing.
 Replace the example `PC_SERVER_TOKEN` with a long random secret and use the
 same value as `CYD_API_TOKEN` on the PC server. `config.h` is ignored by Git.
 
@@ -30,13 +36,6 @@ card owns VSPI; hold BOOT (GPIO0) to restore touch.
 `/messages`. Install its requirements, set `CYD_API_TOKEN` to the same secret
 as `PC_SERVER_TOKEN`, and run it on the trusted LAN. LAN requests require a
 Bearer token; tokenless mode is loopback-only.
-
-## Fixes
-
-Removed real credentials and the hardcoded LAN address; fixed the Wi-Fi
-profile initializer and BACK hitbox; added low reasoning effort for Groq;
-opened SD lazily; moved TFT_eSPI to HSPI; shared keyboard geometry; added a
-Wi-Fi timeout; replaced the ADC seed with `esp_random()`.
 
 ## Limits
 
