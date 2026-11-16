@@ -5,9 +5,13 @@ The CYD and the Windows PC must be on the same trusted home network.  The
 server keeps the last 100 short messages in memory and exposes a tiny JSON
 API.  It is deliberately dependency-light: Flask is the only requirement.
 
-Run:
+Run on a trusted LAN:
     python -m pip install -r requirements.txt
-    python server.py --port 5000
+    # Set CYD_API_TOKEN to a long random secret first.
+    python server.py --host 0.0.0.0 --port 5000
+
+Run locally without a token:
+    python server.py --host 127.0.0.1 --port 5000
 
 Endpoints
     GET  /                 plain-text liveness string
@@ -17,11 +21,13 @@ Endpoints
     GET  /messages?limit=  newest-first JSON list
     POST /messages/clear   drop all in-memory messages
 
-There is no authentication: bind to a trusted LAN only, never port-forward it.
+LAN access requires CYD_API_TOKEN and a Bearer authorization header. Tokenless access is loopback-only.
 """
 from __future__ import annotations
 
 import argparse
+import hmac
+import ipaddress
 import os
 import threading
 from collections import deque
@@ -35,6 +41,33 @@ MAX_MESSAGE_LENGTH = 240
 app = Flask(__name__)
 _messages: deque[dict] = deque(maxlen=MAX_MESSAGES)
 _lock = threading.Lock()
+
+
+def _is_loopback(address: str | None) -> bool:
+    """Return whether a client address is loopback; reject unknown addresses."""
+    if not address:
+        return False
+    try:
+        return ipaddress.ip_address(address).is_loopback
+    except ValueError:
+        return False
+
+
+@app.before_request
+def require_local_or_authenticated_access():
+    """Never expose the message API to a LAN without an explicit shared token."""
+    configured_token = os.getenv("CYD_API_TOKEN", "")
+    supplied = request.headers.get("Authorization", "")
+    if configured_token:
+        expected = f"Bearer {configured_token}"
+        if not hmac.compare_digest(supplied, expected):
+            return jsonify(ok=False, error="valid bearer token required"), 401
+        return None
+
+    # Tokenless mode is deliberately restricted to this computer.
+    if _is_loopback(request.remote_addr):
+        return None
+    return jsonify(ok=False, error="server administrator must configure CYD_API_TOKEN"), 503
 
 
 def _timestamp() -> str:
@@ -138,8 +171,25 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
+    token = os.getenv("CYD_API_TOKEN", "")
+    try:
+        bind_is_loopback = ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        bind_is_loopback = args.host.lower() == "localhost"
+
+    if not bind_is_loopback and not token:
+        parser.error(
+            "CYD_API_TOKEN is required when binding to a LAN address; "
+            "set a long random token before starting the server"
+        )
+    if args.debug and not bind_is_loopback:
+        parser.error("--debug is only allowed on loopback addresses")
+
     print(f"CYD LAN server listening on http://{args.host}:{args.port}")
-    print("Keep this on a trusted LAN; the API has no authentication.")
+    if token:
+        print("Bearer-token authentication is enabled.")
+    else:
+        print("Loopback-only mode: remote clients are blocked.")
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 
