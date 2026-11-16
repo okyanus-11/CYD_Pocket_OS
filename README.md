@@ -12,8 +12,11 @@ partition.
 ## Configuration
 
 Copy `firmware/CYD_Pocket_OS/config.example.h` to `config.h` and fill in the
-local Wi-Fi profiles, Groq settings and PC server address. `config.h` is
-ignored by Git.
+local Wi-Fi profiles, Groq settings and PC server address. Set
+`GROQ_ROOT_CA` to the verified PEM root CA for `api.groq.com`; the firmware
+now rejects HTTPS connections if the CA or synchronized clock is missing.
+Replace the example `PC_SERVER_TOKEN` with a long random secret and use the
+same value as `CYD_API_TOKEN` on the PC server. `config.h` is ignored by Git.
 
 ## Bad Apple
 
@@ -24,7 +27,9 @@ card owns VSPI; hold BOOT (GPIO0) to restore touch.
 ## Server
 
 `server/server.py` is a Flask message queue with `/health`, `/message` and
-`/messages`. Install its requirements and run it on a trusted LAN.
+`/messages`. Install its requirements, set `CYD_API_TOKEN` to the same secret
+as `PC_SERVER_TOKEN`, and run it on the trusted LAN. LAN requests require a
+Bearer token; tokenless mode is loopback-only.
 
 ## Fixes
 
