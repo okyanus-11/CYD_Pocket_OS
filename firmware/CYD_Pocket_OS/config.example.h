@@ -13,6 +13,13 @@
 #define GROQ_API_KEY   "YOUR_GROQ_API_KEY"
 #define GROQ_MODEL     "openai/gpt-oss-20b"
 
+// Paste the verified PEM root CA for api.groq.com. Empty disables API calls.
+#define GROQ_ROOT_CA   ""
+
+// Must match CYD_API_TOKEN on the PC's Flask server (use a long random value).
+// Never commit your real token; config.h is git-ignored.
+#define PC_SERVER_TOKEN "CHANGE_ME_WITH_A_LONG_RANDOM_TOKEN"
+
 // Windows PC running SHARED/LAN_SERVER/server.py (or server/server.py).
 // Use the PC's current LAN IPv4 address; do not reuse an old address.
 #define PC_SERVER_HOST  "192.168.1.100"
